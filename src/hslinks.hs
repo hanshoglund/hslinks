@@ -5,6 +5,7 @@ module Main where
 
 import Data.Char
 import Data.Maybe
+import Data.MemoTrie
 import Text.Regex
 import System.Process
 import System.IO
@@ -36,7 +37,7 @@ runFilter cabals i o = hGetContents i >>= run cabals >>= hPutStr o
 
 -- |
 -- Given a list of cabal files, process input by replacing all text on the form 
--- @@foo@@ with [`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
+-- @[foo] with [`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
 -- 
 -- [foo]:         prefix/Module-With-Foo.html#v:foo
 -- [Foo]:         prefix/Module-With-Foo.html#t:Foo
@@ -54,7 +55,7 @@ run cabals input = do
     
     return $ subElems $ subIndex index $ input
     where                                
-        idExpr    = mkRegex "@@(.*)@@"
+        idExpr    = mkRegex "@\\[([a-z0-9_]+)\\]"
         indexExpr = mkRegex "@@@hslinks@@@"
 
         subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
@@ -68,7 +69,7 @@ run cabals input = do
             let vOrT = if (isUpper $ head ident) then "t" else "v"
             case whichModule sources ident of
                 Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
-                Right modName -> return $ ""
+                Right modName -> return $ ""
                     ++ "[" ++ ident ++ "]: "
                     ++ kPrefix
                     ++ (replace1 '.' '-' modName)
@@ -114,7 +115,7 @@ hasIdent ident = (fmap fst . filter (\(n,ids) -> ident `elem` ids))
 
 -- Get all the identifiers of a module
 identifiers :: ModuleName -> Either String [Identifier]
-identifiers = unsafePerformIO . identifiers'
+identifiers = memo (unsafePerformIO . identifiers')
 
 identifiers' :: ModuleName -> IO (Either String [Identifier])
 identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap getModuleElem) $ (runInterpreter $ getModuleExports modName)
