@@ -12,7 +12,7 @@ import System.IO
 import System.IO.Unsafe
 import System.Environment
 import Language.Haskell.Interpreter
-import Data.List (sort, sortBy, intersperse)
+import Data.List (sort, sortBy, intersperse, nub)
 import Distribution.PackageDescription.Parse
 import Distribution.Verbosity (normal)
 import Distribution.PackageDescription
@@ -49,8 +49,9 @@ run cabals input = do
     !modNames <- visibleModsInCabals cabals
 
     -- TODO generate the index
-    let ids = filter (/= "@hslinks@") $ (fmap head $ fmap snd $ allMatches idExpr input)
-    links <- mapM (idToLink modNames) ids
+    let ids = nub $ filter (/= "@hslinks@") $ (fmap head $ fmap snd $ allMatches idExpr input)
+    let !toLinks = idToLink modNames
+    let links = map toLinks ids
     let index = concatSep "\n" $ links
     
     return $ subElems $ subIndex index $ input
@@ -64,12 +65,12 @@ run cabals input = do
         -- FIXME
         kPrefix = "/docs/api/"
 
-        idToLink :: [ModuleName] -> Identifier -> IO String
+        idToLink :: [ModuleName] -> Identifier -> String
         idToLink sources ident = do
             let vOrT = if (isUpper $ head ident) then "t" else "v"
             case whichModule sources ident of
-                Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
-                Right modName -> return $ ""
+                Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
+                Right modName -> ""
                     ++ "[" ++ ident ++ "]: "
                     ++ kPrefix
                     ++ (replace1 '.' '-' modName)
@@ -78,7 +79,6 @@ run cabals input = do
                     ++ ":"
                     ++ ident ++ ""
     
-
 
 allMatches :: Regex -> String -> [(String, [String])]
 allMatches reg str = case matchRegexAll reg str of
@@ -104,18 +104,21 @@ whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident)
         modsWithIdent = fmap (hasIdent ident) mods
 
 modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
-modsNamed modNames = sequence $ fmap (\n -> case identifiers n of {
+modsNamed modNames = sequence $ fmap modNamed modNames
+
+modNamed :: ModuleName -> Either String (ModuleName, [Identifier])
+modNamed = {-memo-} modNamed'
+modNamed' n = case identifiers n of {
     Left e    -> Left e ;
     Right ids -> Right (n, ids) ;
-    }) modNames
+    }
 
 hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
 hasIdent ident = (fmap fst . filter (\(n,ids) -> ident `elem` ids))
 
-
 -- Get all the identifiers of a module
 identifiers :: ModuleName -> Either String [Identifier]
-identifiers = memo (unsafePerformIO . identifiers')
+identifiers = {-memo-} (unsafePerformIO . identifiers')
 
 identifiers' :: ModuleName -> IO (Either String [Identifier])
 identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap getModuleElem) $ (runInterpreter $ getModuleExports modName)
