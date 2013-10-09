@@ -1,5 +1,5 @@
 
-{-# LANGUAGE BangPatterns, ViewPatterns #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
@@ -12,7 +12,7 @@ import System.IO
 import System.IO.Unsafe
 import System.Environment
 import Language.Haskell.Interpreter
-import Data.List (sort, sortBy, intersperse, nub)
+import Data.List (sort, sortBy, intercalate, nub)
 import Distribution.PackageDescription.Parse
 import Distribution.Verbosity (normal)
 import Distribution.PackageDescription
@@ -49,12 +49,12 @@ run cabals input = do
     !modNames <- visibleModsInCabals cabals
 
     -- TODO generate the index
-    let ids = nub $ filter (/= "@hslinks@") $ (fmap head $ fmap snd $ allMatches idExpr input)
+    let ids = nub $ filter (/= "@hslinks@") (fmap (head . snd) $ allMatches idExpr input)
     let !toLinks = idToLink modNames
     let links = map toLinks ids
-    let index = concatSep "\n" $ links
+    let index = intercalate "\n" links
     
-    return $ subElems $ subIndex index $ input
+    return $ subElems $ subIndex index input
     where                                
         idExpr    = mkRegex "@\\[([a-z0-9_]+)\\]"
         indexExpr = mkRegex "@@@hslinks@@@"
@@ -67,12 +67,12 @@ run cabals input = do
 
         idToLink :: [ModuleName] -> Identifier -> String
         idToLink sources ident = do
-            let vOrT = if (isUpper $ head ident) then "t" else "v"
+            let vOrT = if isUpper (head ident) then "t" else "v"
             case whichModule sources ident of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> ""
                     ++ "[" ++ ident ++ "]: " ++ kPrefix
-                    ++ (replace '.' '-' modName) ++ ".html#" ++ vOrT ++ ":" ++ ident ++ ""
+                    ++ replace '.' '-' modName ++ ".html#" ++ vOrT ++ ":" ++ ident ++ ""
     
 
 allMatches :: Regex -> String -> [(String, [String])]
@@ -109,14 +109,14 @@ modNamed' n = case identifiers n of {
     }
 
 hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
-hasIdent ident = (fmap fst . filter (\(n,ids) -> ident `elem` ids))
+hasIdent ident = fmap fst . filter (\(n,ids) -> ident `elem` ids)
 
 -- | Get all the identifiers of a module
 identifiers :: ModuleName -> Either String [Identifier]
 identifiers = unsafePerformIO . identifiers'
 
 identifiers' :: ModuleName -> IO (Either String [Identifier])
-identifiers' modName = fmap getElemNames $ (runInterpreter $ getModuleExports modName)
+identifiers' modName = fmap getElemNames $ runInterpreter $ getModuleExports modName
     where
         getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
         getError = show
@@ -138,7 +138,7 @@ modsInDir dir = do
         pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
 
 visibleModsInCabals :: [FilePath] -> IO [ModuleName]
-visibleModsInCabals = fmap concat . mapM (visibleModsInCabal)
+visibleModsInCabals = fmap concat . mapM visibleModsInCabal
 
 visibleModsInCabal :: FilePath -> IO [ModuleName]
 visibleModsInCabal path = do
@@ -147,7 +147,7 @@ visibleModsInCabal path = do
         Nothing -> return []
         Just libTree -> return (fmap unModName $ exposedModules $ foldCondTree libTree)
         where                                 
-            unModName = concatSep "." . components
+            unModName = intercalate "." . components
             foldCondTree (CondNode x c comp) = x -- TODO subtrees
 
 bottomMost :: ModuleName -> ModuleName -> Ordering
@@ -160,14 +160,11 @@ bottomMost a b = case level a `compare` level b of
                                             
 -----------------------------------------------------------------------------------------
 
-concatSep :: [a] -> [[a]] -> [a]
-concatSep q = concat . intersperse q
-
 eitherMaybe :: e -> Either e (Maybe a) -> Either e a
 eitherMaybe e' = go
     where       
         go (Left  e)         = Left e
-        go (Right (Nothing)) = Left e'
+        go (Right Nothing)   = Left e'
         go (Right (Just a))  = Right a
 
 -- | @replace x y xs@ replaces all instances of a @x@ in a list @xs@ with @y@.
