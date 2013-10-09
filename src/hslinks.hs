@@ -19,14 +19,77 @@ import Distribution.ModuleName (components)
 
 type Identifier = String
 
+------------------------------------------------------------------------------------------
+
+main :: IO ()
+main = do
+    cabals <- getArgs
+    runStd cabals
+
+runStd :: [FilePath] -> IO ()
+runStd cabals = runFilter cabals stdin stdout
+
+runFilter :: [FilePath] -> Handle -> Handle -> IO ()
+runFilter cabals i o = hGetContents i >>= run cabals >>= hPutStr o
+
+------------------------------------------------------------------------------------------
+
+-- |
+-- Given a list of cabal files, process input by replacing all text on the form 
+-- @@foo@@ with [`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
+-- 
+-- [foo]:         prefix/Module-With-Foo.html#v:foo
+-- [Foo]:         prefix/Module-With-Foo.html#t:Foo
+-- 
+-- etc.
+-- 
+run :: [FilePath] -> String -> IO String
+run cabals input = do
+    !modNames <- visibleModsInCabals cabals
+
+    -- TODO generate the index
+    let ids = filter (/= "@hslinks@") $ (fmap head $ fmap snd $ allMatches idExpr input)
+    links <- mapM (idToLink modNames) ids
+    let index = concatSep "\n" $ links
+    
+    return $ subElems $ subIndex index $ input
+    where                                
+        idExpr    = mkRegex "@@(.*)@@"
+        indexExpr = mkRegex "@@@hslinks@@@"
+
+        subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
+        subIndex i a = subRegex indexExpr a i
+
+-- FIXME
+kPrefix = "/docs/api/"
+
+idToLink :: [ModuleName] -> Identifier -> IO String
+idToLink sources ident = do
+    let vOrT = if (isUpper $ head ident) then "t" else "v"
+    case whichModule sources ident of
+        Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
+        Right modName -> return $ "["++ident++"]: "++kPrefix++(replace1 '.' '-' modName)++".html#"++vOrT++":"++ident++""
+    
+
+
+allMatches :: Regex -> String -> [(String, [String])]
+allMatches reg str = case matchRegexAll reg str of
+    Nothing                           -> []
+    Just (before, match, after, subs) -> (match, subs) : allMatches reg after
+
+
+
+
+-----------------------------------------------------------------------------------------
+
 -- All the identifiers of a module
 identifiers' :: ModuleName -> IO (Either String [Identifier])
-identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap unElem) $ (runInterpreter $ getModuleExports modName)
+identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap getModuleElem) $ (runInterpreter $ getModuleExports modName)
 
-unElem :: ModuleElem -> [String]
-unElem (Fun a)      = [a]
-unElem (Class a as) = a:as
-unElem (Data a as)  = a:as
+getModuleElem :: ModuleElem -> [String]
+getModuleElem (Fun a)      = [a]
+getModuleElem (Class a as) = a:as
+getModuleElem (Data a as)  = a:as
 
 
 modsInDirs :: [FilePath] -> IO [ModuleName]
@@ -74,6 +137,20 @@ whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident)
         modsWithIdent :: Either String [ModuleName]
         modsWithIdent = fmap (fmap fst . filter (\(n,ids) -> ident `elem` ids)) $ mods
 
+bottomMost :: ModuleName -> ModuleName -> Ordering
+bottomMost a b = case level a `compare` level b of
+    LT -> GT
+    EQ -> a `compare` b
+    GT -> LT
+    where
+        level :: ModuleName -> Int
+        level = length . filter (== '.')
+                                            
+-----------------------------------------------------------------------------------------
+
+concatSep :: [a] -> [[a]] -> [a]
+concatSep q = concat . intersperse q
+
 -- [Either e a] -> Either e [a]
 -- [m a] -> m [a]
 
@@ -83,16 +160,6 @@ eitherMaybe msg = go
         go (Left  e)         = Left e
         go (Right (Nothing)) = Left msg
         go (Right (Just a))  = Right a
-
-bottomMost :: ModuleName -> ModuleName -> Ordering
-bottomMost a b = case level a `compare` level b of
-    LT -> GT
-    EQ -> a `compare` b
-    GT -> LT
-    where
-        level :: ModuleName -> Int
-        level = length . filter (== '.')
-
 
 -- FIXME
 fromRight (Right a) = a
@@ -105,64 +172,13 @@ replace1 :: Eq a =>
         -> [a] -- ^ Output list
 replace1 x y = map (\z -> if z == x then y else z)
 
+takeLast :: Int -> [a] -> [a]
+dropLast :: Int -> [a] -> [a]
 
 takeLast n = reverse . take n . reverse
 dropLast n = reverse . drop n . reverse
 
-main = do
-    cabals <- getArgs
-    runStd cabals
-
-runStd :: [FilePath] -> IO ()
-runStd cabals = runFilter cabals stdin stdout
-
-runFilter :: [FilePath] -> Handle -> Handle -> IO ()
-runFilter cabals i o = hGetContents i >>= run cabals >>= hPutStr o
-
-{--
-Given a list of cabal files, process input by replacing all text on the form @@foo@@ with
-[`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
-
-[foo]:         prefix/Module-With-Foo.html#v:foo
-[Foo]:         prefix/Module-With-Foo.html#t:Foo
-
-etc.
-
---}
-run :: [FilePath] -> String -> IO String
-run cabals input = do
-    !modNames <- visibleModsInCabals cabals
-
-    -- TODO generate the index
-    let ids = filter (/= "@hslinks@") $ (fmap head $ fmap snd $ allMatches idExpr input)
-    links <- mapM (idToLink modNames) ids
-    let index = concatSep "\n" $ links
-    
-    return $ subElems $ subIndex index $ input
-    where                                
-        idExpr    = mkRegex "@@(.*)@@"
-        indexExpr = mkRegex "@@@hslinks@@@"
-
-        subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
-        subIndex i a = subRegex indexExpr a i
-
--- FIXME
-kPrefix = "/docs/api/"
-
-idToLink :: [ModuleName] -> Identifier -> IO String
-idToLink sources ident = do
-    let vOrT = if (isUpper $ head ident) then "t" else "v"
-    case whichModule sources ident of
-        Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
-        Right modName -> return $ "["++ident++"]: "++kPrefix++(replace1 '.' '-' modName)++".html#"++vOrT++":"++ident++""
-    
 
 
-allMatches :: Regex -> String -> [(String, [String])]
-allMatches reg str = case matchRegexAll reg str of
-    Nothing                           -> []
-    Just (before, match, after, subs) -> (match, subs) : allMatches reg after
 
-
-concatSep q = concat . intersperse q
 
