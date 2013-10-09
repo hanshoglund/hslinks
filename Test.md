@@ -123,7 +123,7 @@ up (perfect octave) . compress 2 . delay 3 $ c
 
 ## Composing
 
-Music expressions can be composed [`<>`][<>]:
+Music expressions can be composed @[<>]:
 
 ```music+haskell
 c <> e <> g
@@ -131,13 +131,13 @@ c <> e <> g
 
 TODO fundamentally, `<>` is the only way to compose music...
 
-Or in sequence using [`|>`][|>]:
+Or in sequence using @[|>]:
 
 ```music+haskell
 c |> d |> e
 ```
 
-Or partwise using [`</>`][</>]:
+Or partwise using @[</>]:
 
 ```music+haskell
 c </> e </> g
@@ -152,14 +152,14 @@ in up _P8 (scat [c,d,e,f,g,a,g,f]^/8) </> (triad c)^/2 |> (triad g_)^/2
 ```
 
 As a shorthand for `x |> y |> z ..`, we can write `scat [x, y, z]`.
-@@scat@@ (this is short for *sequential concatenation*).
+@[scat] (this is short for *sequential concatenation*).
 
 ```music+haskell
 scat [c,e..g]^/4
 ```
 
 For `x <> y <> z ..`, we can write `pcat [x, y, z]`.
-@@pcat@@ (short for *parallel concatenation*).
+@[pcat] (short for *parallel concatenation*).
 
 ```music+haskell
 pcat [c,e..g]^/2
@@ -210,7 +210,7 @@ Shorter syntax for other octaves:
 c__ |> c_ |> c |> c' |> c''
 ```
 
-Sharps and flats can be added by the functions @@sharp@@ and @@flat@@, which are written 
+Sharps and flats can be added by the functions @[sharp] and @[flat], which are written 
 *postfix* thanks to some overloading magic.
 
 ```music+haskell
@@ -270,7 +270,16 @@ TODO other ways of applying dynamics
 
 ## Articulation
 
-Some basic articulation functions are @@legato@@, @@staccato@@, @@portato@@, @@tenuto@@, @@separated@@, @@spiccato@@:
+Some basic articulation functions are @[legato], @[staccato], @[portato], @[tenuto], @[separated], @[spiccato]:
+
+Some basic articulation functions are @[legato], @[staccato], @[portato], @[tenuto], @[separated], @[spiccato]:
+
+Some basic articulation functions are @[legato], @[staccato], @[portato], @[tenuto], @[separated], @[spiccato]:
+
+Some basic articulation functions are @[legato], @[staccato], @[portato], @[tenuto], @[separated], @[spiccato]:
+
+Some basic articulation functions are @[legato], @[staccato], @[portato], @[tenuto], @[separated], @[spiccato]:
+
 
 ```music+haskell
 legato (scat [c..g]^/8)
@@ -286,8 +295,8 @@ separated (scat [c..g]^/8)
 spiccato (scat [c..g]^/8)
 ```
 
-@@accent@@
-@@marcato@@
+@[accent]
+@[marcato]
 
 ```music+haskell
 accent (scat [c..g]^/8)
@@ -295,8 +304,8 @@ accent (scat [c..g]^/8)
 marcato (scat [c..g]^/8)
 ```
 
-@@accentLast@@
-@@accentAll@@
+@[accentLast]
+@[accentAll]
 
 ```music+haskell
 accentLast (scat [c..g]^/8)
@@ -316,7 +325,7 @@ in (accent . legato) (p1 </> p2 </> p3)
 
 ## Tremolo
 
-@@tremolo@@
+@[tremolo]
 
 ```music+haskell
 tremolo 2 $ times 2 $ (c |> d)^/4
@@ -324,8 +333,8 @@ tremolo 2 $ times 2 $ (c |> d)^/4
 
 ## Slides and glissando
 
-@@slide@@
-@@glissando@@
+@[slide]
+@[glissando]
 
 ```music+haskell
 glissando $ scat [c,d]^/2
@@ -333,7 +342,7 @@ glissando $ scat [c,d]^/2
 
 ## Harmonics
 
-Use the @@harmonic@@ function:
+Use the @[harmonic] function:
 
 ```music+haskell
 (harmonic 1 $ c^/2)
@@ -342,12 +351,12 @@ Use the @@harmonic@@ function:
     </>
 (harmonic 3 $ c^/2)
 ```
-@@artificial@@
+@[artificial]
 
 
 ## Text
 
-@@text@@
+@[text]
 
 ```music+haskell
 text "pizz." $ c^/2
@@ -357,7 +366,7 @@ text "pizz." $ c^/2
 
 Sometimes it is useful to work with scores that have a duration but no events.
 This kind of score is represented by `rest` and has the type `Score (Maybe
-Note)`. We use @@removeRests@@ to convert a `Score (Maybe a)`
+Note)`. We use @[removeRests] to convert a `Score (Maybe a)`
 into a `Score a`.
 
 ```music+haskell
@@ -371,7 +380,7 @@ removeRests $ times 4 (accent g^*2 |> rest |> scat [d,d]^/2)^/8
 
 ## Time
 
-@@rev@@
+@[rev]
 
 ```music+haskell
 let
@@ -379,7 +388,7 @@ let
 in melody |> rev melody
 ```
 
-@@times@@
+@[times]
 
 ```music+haskell
 let
@@ -387,7 +396,7 @@ let
 in times 4 $ melody
 ```
 
-@@repeated@@
+@[repeated]
 
 ```music+haskell
 let 
@@ -406,7 +415,7 @@ in compress 4 $ melody </> pedal
 
 ## Pitch
 
-@@invertAround@@
+@[invertAround]
 
 ```music+haskell
 (scat [c..g]^*(2/5))
@@ -454,11 +463,11 @@ TODO
 
 # Time-based structures
 
-@@Score@@
-[`Voice`][Voice]
-[`Track`][Track]
-[`Delayable`][Delayable]
-[`Stretchable`][Stretchable]
+@[Score]
+@[Voice]
+@[Track]
+@[Delayable]
+@[Stretchable]
 
 
 # Meta-information
@@ -482,7 +491,7 @@ The conventions for input or output formats is similar to the convention for pro
 All standard representations support MIDI input and output. The MIDI representation uses [HCodecs](http://hackage.haskell.org/package/HCodecs) and the real-time support uses [hamid](http://hackage.haskell.org/package/hamid). 
 
 <!--
-You can read and write MIDI files using the functions [`readMidi`][readMidi] and [`writeMidi`][writeMidi]. To play MIDI back in real-time, use [`playMidi`][playMidi] or [`playMidiIO`][playMidiIO], which uses [reenact](http://hackage.haskell.org/package/reenact).
+You can read and write MIDI files using the functions @[readMidi] and @[writeMidi]. To play MIDI back in real-time, use @[playMidi] or @[playMidiIO], which uses [reenact](http://hackage.haskell.org/package/reenact).
 -->
 
 Beware that MIDI input may contain time and pitch values that yield a non-readable notation, you need a proper quantization software such as [
