@@ -60,15 +60,22 @@ run cabals input = do
         subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
         subIndex i a = subRegex indexExpr a i
 
--- FIXME
-kPrefix = "/docs/api/"
+        -- FIXME
+        kPrefix = "/docs/api/"
 
-idToLink :: [ModuleName] -> Identifier -> IO String
-idToLink sources ident = do
-    let vOrT = if (isUpper $ head ident) then "t" else "v"
-    case whichModule sources ident of
-        Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
-        Right modName -> return $ "["++ident++"]: "++kPrefix++(replace1 '.' '-' modName)++".html#"++vOrT++":"++ident++""
+        idToLink :: [ModuleName] -> Identifier -> IO String
+        idToLink sources ident = do
+            let vOrT = if (isUpper $ head ident) then "t" else "v"
+            case whichModule sources ident of
+                Left e -> return $ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
+                Right modName -> return $ ""
+                    ++ "[" ++ ident ++ "]: "
+                    ++ kPrefix
+                    ++ (replace1 '.' '-' modName)
+                    ++ ".html#"
+                    ++ vOrT
+                    ++ ":"
+                    ++ ident ++ ""
     
 
 
@@ -82,7 +89,33 @@ allMatches reg str = case matchRegexAll reg str of
 
 -----------------------------------------------------------------------------------------
 
--- All the identifiers of a module
+-- whichModule, visibleModsInCabals
+
+-- Given a set of modules, find the topmost module in which an identifier appears
+-- A module is considered above another if it has fewer dots in its name. If the number of
+-- dots are equal, use lexiographic order.
+whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
+whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident) 
+    $ fmap (listToMaybe . sortBy bottomMost) modsWithIdent
+    where
+        mods = modsNamed modNames
+        -- modules containing the identifier
+        modsWithIdent = fmap (hasIdent ident) mods
+
+modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
+modsNamed modNames = sequence $ fmap (\n -> case identifiers n of {
+    Left e    -> Left e ;
+    Right ids -> Right (n, ids) ;
+    }) modNames
+
+hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
+hasIdent ident = (fmap fst . filter (\(n,ids) -> ident `elem` ids))
+
+
+-- Get all the identifiers of a module
+identifiers :: ModuleName -> Either String [Identifier]
+identifiers = unsafePerformIO . identifiers'
+
 identifiers' :: ModuleName -> IO (Either String [Identifier])
 identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap getModuleElem) $ (runInterpreter $ getModuleExports modName)
 
@@ -91,9 +124,8 @@ getModuleElem (Fun a)      = [a]
 getModuleElem (Class a as) = a:as
 getModuleElem (Data a as)  = a:as
 
-
-modsInDirs :: [FilePath] -> IO [ModuleName]
-modsInDirs = fmap concat . mapM (modsInDir)
+-- modsInDirs :: [FilePath] -> IO [ModuleName]
+-- modsInDirs = fmap concat . mapM (modsInDir)
 
 modsInDir :: FilePath -> IO [ModuleName]
 modsInDir dir = do
@@ -116,26 +148,6 @@ visibleModsInCabal path = do
         where                                 
             unModName = concatSep "." . components
             foldCondTree (CondNode x c comp) = x -- TODO subtrees
-
-identifiers :: ModuleName -> Either String [Identifier]
-identifiers = unsafePerformIO . identifiers'
-
--- Given a set of modules, find the topmost module in which an identifier appears
--- A module is considered above another if it has fewer dots in its name. If the number of
--- dots are equal, use lexiographic order.
-whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
-whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident) 
-    $ fmap (listToMaybe . sortBy bottomMost) modsWithIdent
-    where
-        mods :: Either String [(ModuleName, [Identifier])]
-        mods = sequence $ fmap (\n -> case identifiers n of {
-            Left e    -> Left e ;
-            Right ids -> Right (n, ids) ;
-            }) modNames
-
-        -- modules containing the identifier
-        modsWithIdent :: Either String [ModuleName]
-        modsWithIdent = fmap (fmap fst . filter (\(n,ids) -> ident `elem` ids)) $ mods
 
 bottomMost :: ModuleName -> ModuleName -> Ordering
 bottomMost a b = case level a `compare` level b of
