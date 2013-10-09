@@ -2,7 +2,6 @@
 # HSLINKS=hslinks
 HSLINKS=dist/build/hslinks/hslinks
 CABAL_FILES=\
-	../music-preludes/music-preludes.cabal \
 	../music-score/music-score.cabal \
 	../music-pitch/music-pitch.cabal \
 	../music-dynamics/music-dynamics.cabal \

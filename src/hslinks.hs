@@ -49,15 +49,19 @@ run args input = do
     !modNames <- visibleModsInCabals args
 
     -- TODO generate the index
-    let ids = nub $ filter (/= "@hslinks@") (fmap (head . snd) $ allMatches idExpr input)
+    let ids = nub $ fmap getId $ allMatches idExpr input
     let !toLinks = idToLink modNames
     let links = map toLinks ids
     let index = intercalate "\n" links
     
     return $ subElems $ subIndex index input
-    where                                
-        idExpr    = mkRegex "@\\[([a-z0-9_]+)\\]"
-        indexExpr = mkRegex "@@@hslinks@@@"
+    where                                       
+        idChars   = "[^]]+"
+        idExpr    = mkRegex $ "@\\[(" ++ idChars ++ ")\\]"
+        indexExpr = mkRegex $ "@@@hslinks@@@"
+        getId     = head . snd
+
+
 
         subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
         subIndex i a = subRegex indexExpr a i
@@ -68,20 +72,32 @@ run args input = do
         idToLink :: [ModuleName] -> Identifier -> String
         idToLink sources ident = do
             let vOrT = if isUpper (head ident) then "t" else "v"
-            case whichModule sources ident of
+            case whichModule sources (wrapOp ident) of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> ""
                     ++ "[" ++ ident ++ "]: " ++ kPrefix
-                    ++ replace '.' '-' modName ++ ".html#" ++ vOrT ++ ":" ++ ident ++ ""
+                    ++ replace '.' '-' modName ++ ".html#" ++ vOrT ++ ":" ++ handleOp ident ++ ""
+
+wrapOp :: Identifier -> Identifier
+wrapOp []     = []
+wrapOp as@(x:_)
+    | isAlphaNum x = as
+    | otherwise    = "(" ++ as ++ ")"
     
+handleOp :: Identifier -> Identifier
+handleOp []     = []
+handleOp as@(x:_)
+    | isAlphaNum x = as
+    | otherwise    = escapeOp as
+
+escapeOp = concatMap (\c -> "-" ++ show (ord c) ++ "-")
+
 
 allMatches :: Regex -> String -> [(String, [String])]
 allMatches reg str = case matchRegexAll reg str of
     Nothing                           -> []
     Just (before, match, after, subs) -> (match, subs) : allMatches reg after
-
-
-
+               
 
 -----------------------------------------------------------------------------------------
 
