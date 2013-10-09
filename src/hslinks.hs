@@ -24,14 +24,14 @@ type Identifier = String
 
 main :: IO ()
 main = do
-    cabals <- getArgs
-    runStd cabals
+    args <- getArgs
+    runStd args
 
 runStd :: [FilePath] -> IO ()
-runStd cabals = runFilter cabals stdin stdout
+runStd = runFilter stdin stdout
 
-runFilter :: [FilePath] -> Handle -> Handle -> IO ()
-runFilter cabals i o = hGetContents i >>= run cabals >>= hPutStr o
+runFilter :: Handle -> Handle -> [FilePath] -> IO ()
+runFilter inf outf args = hGetContents inf >>= run args >>= hPutStr outf
 
 ------------------------------------------------------------------------------------------
 
@@ -45,8 +45,8 @@ runFilter cabals i o = hGetContents i >>= run cabals >>= hPutStr o
 -- etc.
 -- 
 run :: [FilePath] -> String -> IO String
-run cabals input = do
-    !modNames <- visibleModsInCabals cabals
+run args input = do
+    !modNames <- visibleModsInCabals args
 
     -- TODO generate the index
     let ids = nub $ filter (/= "@hslinks@") (fmap (head . snd) $ allMatches idExpr input)
