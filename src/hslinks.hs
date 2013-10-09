@@ -1,5 +1,5 @@
-#!/usr/bin/env runhaskell
-{-# LANGUAGE BangPatterns #-}
+
+{-# LANGUAGE BangPatterns, ViewPatterns #-}
 
 module Main where
 
@@ -71,13 +71,8 @@ run cabals input = do
             case whichModule sources ident of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> ""
-                    ++ "[" ++ ident ++ "]: "
-                    ++ kPrefix
-                    ++ (replace1 '.' '-' modName)
-                    ++ ".html#"
-                    ++ vOrT
-                    ++ ":"
-                    ++ ident ++ ""
+                    ++ "[" ++ ident ++ "]: " ++ kPrefix
+                    ++ (replace '.' '-' modName) ++ ".html#" ++ vOrT ++ ":" ++ ident ++ ""
     
 
 allMatches :: Regex -> String -> [(String, [String])]
@@ -107,7 +102,7 @@ modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
 modsNamed modNames = sequence $ fmap modNamed modNames
 
 modNamed :: ModuleName -> Either String (ModuleName, [Identifier])
-modNamed = {-memo-} modNamed'
+modNamed = modNamed'
 modNamed' n = case identifiers n of {
     Left e    -> Left e ;
     Right ids -> Right (n, ids) ;
@@ -116,29 +111,31 @@ modNamed' n = case identifiers n of {
 hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
 hasIdent ident = (fmap fst . filter (\(n,ids) -> ident `elem` ids))
 
--- Get all the identifiers of a module
+-- | Get all the identifiers of a module
 identifiers :: ModuleName -> Either String [Identifier]
-identifiers = {-memo-} (unsafePerformIO . identifiers')
+identifiers = unsafePerformIO . identifiers'
 
 identifiers' :: ModuleName -> IO (Either String [Identifier])
-identifiers' modName = fmap (either (Left . show) Right) $ (fmap $ fmap $ concat . fmap getModuleElem) $ (runInterpreter $ getModuleExports modName)
+identifiers' modName = fmap getElemNames $ (runInterpreter $ getModuleExports modName)
+    where
+        getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
+        getError = show
 
-getModuleElem :: ModuleElem -> [String]
+-- | Get all identifiers in a module element (names, class members, data constructors)
+getModuleElem :: ModuleElem -> [Identifier]
 getModuleElem (Fun a)      = [a]
 getModuleElem (Class a as) = a:as
 getModuleElem (Data a as)  = a:as
 
--- modsInDirs :: [FilePath] -> IO [ModuleName]
--- modsInDirs = fmap concat . mapM (modsInDir)
-
 modsInDir :: FilePath -> IO [ModuleName]
 modsInDir dir = do
     dirList <- readProcess "find" [dir, "-type", "f", "-name", "*.hs"] "" 
-    let dirs = lines dirList                           
-    -- return dirs
-    return $ fmap (pathToModName . drop (length dir)) dirs
-    where
-        pathToModName = replace1 '/' '.' . dropWhile (not . isUpper) . dropLast 3
+    let dirs = lines dirList
+    let mods = fmap (pathToModName . dropBaseDir) dirs
+    return mods
+    where                                 
+        dropBaseDir   = drop (length dir)
+        pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
 
 visibleModsInCabals :: [FilePath] -> IO [ModuleName]
 visibleModsInCabals = fmap concat . mapM (visibleModsInCabal)
@@ -154,12 +151,11 @@ visibleModsInCabal path = do
             foldCondTree (CondNode x c comp) = x -- TODO subtrees
 
 bottomMost :: ModuleName -> ModuleName -> Ordering
-bottomMost a b = case level a `compare` level b of
+bottomMost a b = case level a `compare` level b of 
     LT -> GT
-    EQ -> a `compare` b
+    EQ -> a `compare` b 
     GT -> LT
     where
-        level :: ModuleName -> Int
         level = length . filter (== '.')
                                             
 -----------------------------------------------------------------------------------------
@@ -167,31 +163,21 @@ bottomMost a b = case level a `compare` level b of
 concatSep :: [a] -> [[a]] -> [a]
 concatSep q = concat . intersperse q
 
--- [Either e a] -> Either e [a]
--- [m a] -> m [a]
-
 eitherMaybe :: e -> Either e (Maybe a) -> Either e a
-eitherMaybe msg = go
+eitherMaybe e' = go
     where       
         go (Left  e)         = Left e
-        go (Right (Nothing)) = Left msg
+        go (Right (Nothing)) = Left e'
         go (Right (Just a))  = Right a
 
--- FIXME
-fromRight (Right a) = a
-
--- | Replaces all instances of a value in a list by another value.
-replace1 :: Eq a =>
-           a   -- ^ Value to look for
-        -> a   -- ^ Value to replace it with
-        -> [a] -- ^ Input list
-        -> [a] -- ^ Output list
-replace1 x y = map (\z -> if z == x then y else z)
+-- | @replace x y xs@ replaces all instances of a @x@ in a list @xs@ with @y@.
+replace :: Eq a => a -> a -> [a] -> [a]
+replace x y = map $ \z -> if z == x then y else z
 
 takeLast :: Int -> [a] -> [a]
-dropLast :: Int -> [a] -> [a]
-
 takeLast n = reverse . take n . reverse
+
+dropLast :: Int -> [a] -> [a]
 dropLast n = reverse . drop n . reverse
 
 
