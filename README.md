@@ -1,7 +1,7 @@
 
 # hslinks
 
-`hslinks` is a simple utility program that resolves links to Haskell functions in Markdown-style text. This is mainly useful if you want to maintain documentation
+`hslinks` is a simple utility program that resolves links to Haskell identifiers in Markdown-style text. This is mainly useful if you want to maintain documentation
 of a Haskell program or library outside source code but still have links the
 Haddock-generated API documentation.
 

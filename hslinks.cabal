@@ -6,8 +6,8 @@ author:             Hans Hoglund
 maintainer:         Hans Hoglund <hans@hanshoglund.se>
 license:            BSD3
 license-file:       COPYING
-synopsis:           To be written
-category:           
+synopsis:           Resolves links to Haskell identifiers.
+category:           Development
 tested-with:        GHC
 build-type:         Simple
 
