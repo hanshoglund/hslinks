@@ -1,7 +1,9 @@
 
 # hslinks
 
-Resolves links to Haskell functions in Markdown-style text.
+`hslinks` is a simple utility program that resolves links to Haskell functions in Markdown-style text. This is mainly useful if you want to maintain documentation
+of a Haskell program or library outside source code but still have links the
+Haddock-generated API documentation.
 
 Invoke with a list of Cabal files as follows
 
