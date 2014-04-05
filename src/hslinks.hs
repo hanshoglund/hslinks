@@ -72,10 +72,13 @@ run args input = do
         idToLink :: [ModuleName] -> Identifier -> String
         idToLink sources ident = do
             let vOrT = if isUpper (head ident) then "t" else "v"
+            -- TODO
+            -- TODO This should be optional
+            let package = "music-score" 
             case whichModule sources (wrapOp ident) of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> ""
-                    ++ "[" ++ ident ++ "]: " ++ kPrefix
+                    ++ "[" ++ ident ++ "]: " ++ kPrefix ++ package ++ "/"
                     ++ replace '.' '-' modName ++ ".html#" ++ vOrT ++ ":" ++ handleOp ident ++ ""
 
 wrapOp :: Identifier -> Identifier
