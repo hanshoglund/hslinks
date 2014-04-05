@@ -3,20 +3,22 @@
 
 module Main where
 
-import Data.Char
-import Data.Maybe
-import Data.MemoTrie
-import Text.Regex
-import System.Process
-import System.IO
-import System.IO.Unsafe
-import System.Environment
-import Language.Haskell.Interpreter
-import Data.List (sort, sortBy, intercalate, nub)
-import Distribution.PackageDescription.Parse
-import Distribution.Verbosity (normal)
-import Distribution.PackageDescription
-import Distribution.ModuleName (components)
+import           Data.Char
+import           Data.List                             (intercalate, nub, sort,
+                                                        sortBy)
+import           Data.Maybe
+import           Data.MemoTrie
+import           Data.Traversable                      (traverse)
+import           Distribution.ModuleName               (components)
+import qualified Distribution.PackageDescription       as PD
+import qualified Distribution.PackageDescription.Parse as PDP
+import           Distribution.Verbosity                (normal)
+import           Language.Haskell.Interpreter
+import           System.Environment
+import           System.IO
+import           System.IO.Unsafe
+import           System.Process
+import           Text.Regex
 
 type Identifier = String
 
@@ -36,26 +38,25 @@ runFilter inf outf args = hGetContents inf >>= run args >>= hPutStr outf
 ------------------------------------------------------------------------------------------
 
 -- |
--- Given a list of cabal files, process input by replacing all text on the form 
+-- Given a list of cabal files, process input by replacing all text on the form
 -- @[foo] with [`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
--- 
+--
 -- [foo]:         prefix/Module-With-Foo.html#v:foo
 -- [Foo]:         prefix/Module-With-Foo.html#t:Foo
--- 
+--
 -- etc.
--- 
+--
 run :: [FilePath] -> String -> IO String
 run args input = do
     !modNames <- visibleModsInCabals args
 
-    -- TODO generate the index
     let ids = nub $ fmap getId $ allMatches idExpr input
     let !toLinks = idToLink modNames
     let links = map toLinks ids
     let index = intercalate "\n" links
-    
+
     return $ subElems $ subIndex index input
-    where                                       
+    where
         idChars   = "[^]]+"
         idExpr    = mkRegex $ "@\\[(" ++ idChars ++ ")\\]"
         indexExpr = mkRegex $ "@@@hslinks@@@"
@@ -73,8 +74,8 @@ run args input = do
         idToLink sources ident = do
             let vOrT = if isUpper (head ident) then "t" else "v"
             -- TODO
-            -- TODO This should be optional
-            let package = "music-score" 
+            -- TODO This should be optionalg
+            let package = "music-score"
             case whichModule sources (wrapOp ident) of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> ""
@@ -86,7 +87,7 @@ wrapOp []     = []
 wrapOp as@(x:_)
     | isAlphaNum x = as
     | otherwise    = "(" ++ as ++ ")"
-    
+
 handleOp :: Identifier -> Identifier
 handleOp []     = []
 handleOp as@(x:_)
@@ -100,7 +101,7 @@ allMatches :: Regex -> String -> [(String, [String])]
 allMatches reg str = case matchRegexAll reg str of
     Nothing                           -> []
     Just (before, match, after, subs) -> (match, subs) : allMatches reg after
-               
+
 
 -----------------------------------------------------------------------------------------
 
@@ -110,7 +111,7 @@ allMatches reg str = case matchRegexAll reg str of
 -- A module is considered above another if it has fewer dots in its name. If the number of
 -- dots are equal, use lexiographic order.
 whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
-whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident) 
+whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident)
     $ fmap (listToMaybe . sortBy bottomMost) modsWithIdent
     where
         mods = modsNamed modNames
@@ -118,7 +119,7 @@ whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident)
         modsWithIdent = fmap (hasIdent ident) mods
 
 modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
-modsNamed modNames = sequence $ fmap modNamed modNames
+modsNamed = traverse modNamed
 
 modNamed :: ModuleName -> Either String (ModuleName, [Identifier])
 modNamed = modNamed'
@@ -140,7 +141,7 @@ identifiers' modName = fmap getElemNames $ runInterpreter $ getModuleExports mod
         getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
         getError = show
 
--- | Get all identifiers in a module element (names, class members, data constructors)
+-- | Get all identifiers in a module element (names, class members, data constructors)
 getModuleElem :: ModuleElem -> [Identifier]
 getModuleElem (Fun a)      = [a]
 getModuleElem (Class a as) = a:as
@@ -148,11 +149,11 @@ getModuleElem (Data a as)  = a:as
 
 modsInDir :: FilePath -> IO [ModuleName]
 modsInDir dir = do
-    dirList <- readProcess "find" [dir, "-type", "f", "-name", "*.hs"] "" 
+    dirList <- readProcess "find" [dir, "-type", "f", "-name", "*.hs"] ""
     let dirs = lines dirList
     let mods = fmap (pathToModName . dropBaseDir) dirs
     return mods
-    where                                 
+    where
         dropBaseDir   = drop (length dir)
         pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
 
@@ -161,27 +162,27 @@ visibleModsInCabals = fmap concat . mapM visibleModsInCabal
 
 visibleModsInCabal :: FilePath -> IO [ModuleName]
 visibleModsInCabal path = do
-    packageDesc <- readPackageDescription normal path 
-    case condLibrary packageDesc of
+    packageDesc <- PDP.readPackageDescription normal path
+    case PD.condLibrary packageDesc of
         Nothing -> return []
-        Just libTree -> return (fmap unModName $ exposedModules $ foldCondTree libTree)
-        where                                 
+        Just libTree -> return (fmap unModName $ PD.exposedModules $ foldCondTree libTree)
+        where
             unModName = intercalate "." . components
-            foldCondTree (CondNode x c comp) = x -- TODO subtrees
+            foldCondTree (PD.CondNode x c comp) = x -- TODO subtrees
 
 bottomMost :: ModuleName -> ModuleName -> Ordering
-bottomMost a b = case level a `compare` level b of 
+bottomMost a b = case level a `compare` level b of
     LT -> GT
-    EQ -> a `compare` b 
+    EQ -> a `compare` b
     GT -> LT
     where
         level = length . filter (== '.')
-                                            
+
 -----------------------------------------------------------------------------------------
 
 eitherMaybe :: e -> Either e (Maybe a) -> Either e a
 eitherMaybe e' = go
-    where       
+    where
         go (Left  e)         = Left e
         go (Right Nothing)   = Left e'
         go (Right (Just a))  = Right a
