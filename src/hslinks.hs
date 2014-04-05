@@ -67,8 +67,6 @@ run args input = do
         indexExpr = mkRegex $ "@@@hslinks@@@"
         getId     = head . snd
 
-
-
         subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
         subIndex i a = subRegex indexExpr a i
 
