@@ -16,7 +16,7 @@ The program acts as a text transformer that replaces
 
 For an example, see `Test.md`.
 
-`hslinks` uses the modules currently installed on the system.
+`hslinks` uses the modules currently installed on the system. If you have a sandbox, you can set `GHC_PACKAGE_PATH` before invoking it.
 
 
 ## Requirements
