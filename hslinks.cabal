@@ -12,8 +12,12 @@ tested-with:        GHC
 build-type:         Simple
 
 description:
-    To be written.
-
+    A simple utility program that resolves links to Haskell identifiers in Markdown-style text.
+    This is useful if you want to maintain documentation of a Haskell program or library outside
+    the source code but still have links the Haddock-generated API documentation.
+    .
+    For usage, see <https://github.com/hanshoglund/hslinks>
+    
 source-repository head
     type:               git
     location:           git://github.com/hanshoglund/hslinks.git
