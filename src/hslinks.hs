@@ -10,21 +10,21 @@ import           Data.Ord                              (comparing)
 import           Data.Maybe
 import           Data.MemoTrie
 import           Data.Traversable                      (traverse)
-
-import           Distribution.ModuleName               (components)
-import qualified Distribution.Package                  as P
-import qualified Distribution.PackageDescription       as PD
-import qualified Distribution.PackageDescription.Parse as PDP
-import           Distribution.Verbosity                (normal)
-
-import           Language.Haskell.Interpreter          (ModuleName, ModuleElem(..))
-import qualified Language.Haskell.Interpreter          as Hint
-
 import           System.Environment
 import           System.IO
 import           System.IO.Unsafe
 import           System.Process
 import           Text.Regex
+
+
+import qualified Distribution.ModuleName               as M
+import qualified Distribution.Package                  as P
+import qualified Distribution.PackageDescription       as PD
+import qualified Distribution.PackageDescription.Parse as PDP
+import qualified Distribution.Verbosity
+
+import           Language.Haskell.Interpreter          (ModuleName, ModuleElem(..))
+import qualified Language.Haskell.Interpreter          as Hint
 
 type Identifier = String
 
@@ -109,11 +109,10 @@ run args input = do
         -- Escape an operator a la Haddock
         escapeOp = concatMap (\c -> "-" ++ show (ord c) ++ "-")
 
-
-        allMatches :: Regex -> String -> [(String, [String])]
-        allMatches reg str = case matchRegexAll reg str of
-            Nothing                           -> []
-            Just (before, match, after, subs) -> (match, subs) : allMatches reg after
+allMatches :: Regex -> String -> [(String, [String])]
+allMatches reg str = case matchRegexAll reg str of
+    Nothing                           -> []
+    Just (before, match, after, subs) -> (match, subs) : allMatches reg after
 
 type PackageName = String
 
@@ -122,7 +121,8 @@ type PackageName = String
 -- Only these used above:
 -- whichModule, packageAndModNamesInCabals
 
-(whichModule, packageAndModNamesInCabals) = (whichModule', packageAndModNamesInCabals')
+whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
+whichModule = whichModule'
   where
     -- Given a set of modules, find the topmost module in which an identifier appears
     -- A module is considered above another if it has fewer dots in its name. If the number of
@@ -176,6 +176,14 @@ type PackageName = String
             pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
 
     -}
+
+-- |
+-- Given a list of paths to Cabal files, return all packages and the list
+-- of modules declared therein.
+--
+packageAndModNamesInCabals :: [FilePath] -> IO [(PackageName, [ModuleName])]
+packageAndModNamesInCabals = packageAndModNamesInCabals'
+  where
     packageAndModNamesInCabals' :: [FilePath] -> IO [(PackageName, [ModuleName])]
     packageAndModNamesInCabals' paths = flip mapM paths $ \path -> do
         pn  <- packageNameInCabal path
@@ -188,7 +196,7 @@ type PackageName = String
 
     packageNameInCabal :: FilePath -> IO PackageName
     packageNameInCabal path = do
-        packageDesc <- PDP.readPackageDescription normal path
+        packageDesc <- PDP.readPackageDescription Distribution.Verbosity.normal path
         return $ unPackageName $ P.pkgName $ PD.package $ PD.packageDescription packageDesc
             where
                 unPackageName (P.PackageName x) = x
@@ -198,7 +206,7 @@ type PackageName = String
 
     modNamesInCabal :: FilePath -> IO [ModuleName]
     modNamesInCabal path = do
-        packageDesc <- PDP.readPackageDescription normal path
+        packageDesc <- PDP.readPackageDescription Distribution.Verbosity.normal path
 
         -- TODO Why doesn't this work?
         -- case PD.library $ PD.packageDescription packageDesc of
@@ -212,16 +220,8 @@ type PackageName = String
             Just library -> return $ exposedModules library
             where
                 exposedModules = fmap unModName . PD.exposedModules . foldCondTree
-                unModName = intercalate "." . components
+                unModName = intercalate "." . M.components
                 foldCondTree (PD.CondNode x c comp) = x -- Ignore subtrees   
-
-    bottomMost :: ModuleName -> ModuleName -> Ordering
-    bottomMost a b = case comparing level a b of
-        LT -> GT
-        EQ -> a `compare` b
-        GT -> LT
-        where
-            level = length . filter (== '.')
 
 -----------------------------------------------------------------------------------------
 
@@ -248,6 +248,14 @@ strength = fmap (fmap (\(x,y)->(y,x))) $ uncurry (flip strength')
 
 strength' :: Functor f => f a -> b -> f (a,b)
 strength' fa b = fmap (\a -> (a,b)) fa
+
+bottomMost :: ModuleName -> ModuleName -> Ordering
+bottomMost a b = case comparing level a b of
+    LT -> GT
+    EQ -> a `compare` b
+    GT -> LT
+    where
+        level = length . filter (== '.')
 
 
 
