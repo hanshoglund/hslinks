@@ -10,13 +10,16 @@ import           Data.Ord                              (comparing)
 import           Data.Maybe
 import           Data.MemoTrie
 import           Data.Traversable                      (traverse)
+
 import           Distribution.ModuleName               (components)
 import qualified Distribution.Package                  as P
 import qualified Distribution.PackageDescription       as PD
 import qualified Distribution.PackageDescription.Parse as PDP
 import           Distribution.Verbosity                (normal)
+
 import           Language.Haskell.Interpreter          (ModuleName, ModuleElem(..))
 import qualified Language.Haskell.Interpreter          as Hint
+
 import           System.Environment
 import           System.IO
 import           System.IO.Unsafe
@@ -28,12 +31,7 @@ type Identifier = String
 ------------------------------------------------------------------------------------------
 
 main :: IO ()
-main = do
-    args <- getArgs
-    runStd args
-
-runStd :: [FilePath] -> IO ()
-runStd = runFilter stdin stdout
+main = getArgs >>= runFilter stdin stdout
 
 runFilter :: Handle -> Handle -> [FilePath] -> IO ()
 runFilter inf outf args = hGetContents inf >>= run args >>= hPutStr outf
@@ -58,7 +56,7 @@ run args input = do
     let ids = nub $ fmap getId $ allMatches idExpr input
     let !toLinks = idToLink (concatMap strength $ packAndMod)
     let links = sort $ nub $ map toLinks ids
-    let index = intercalate "\n" links
+    let index = "<!-- hslinks 0.6.1 index: -->\n" ++ intercalate "\n" links
 
     return $ subElems $ subIndex index input
     where
@@ -72,8 +70,8 @@ run args input = do
 
         -- This must be a subfunction of run for some reason (probably due to unsafe stuff below) 
         idToLink :: [(PackageName, ModuleName)] -> Identifier -> String
-        idToLink !sources ident = do
-            let vOrT = if isUpper (head ident) then "t" else "v"
+        idToLink !sources ident =
+            let vOrT = if isUpper (head ident) then "t" else "v" in
             case whichModule (fmap snd sources) (wrapOp ident) of
                 Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
                 Right modName -> 
@@ -88,140 +86,142 @@ run args input = do
                         ++ "#" 
                         ++ vOrT ++ ":" ++ handleOp ident ++ ""
 
--- FIXME
-kPrefix = "/docs/api/"
+        -- FIXME
+        kPrefix = "/docs/api/"
+        swap (x,y) = (y,x)
+        whichPackage sources x = lookup x (fmap swap sources)
+
+        -- If the given identifier is an operator, wrap it in parentheses
+        -- Necessary to make the search work
+        wrapOp :: Identifier -> Identifier
+        wrapOp []     = []
+        wrapOp as@(x:_)
+            | isAlphaNum x = as
+            | otherwise    = "(" ++ as ++ ")"
+
+        -- If the given identifier is an operator, escape it
+        handleOp :: Identifier -> Identifier
+        handleOp []     = []
+        handleOp as@(x:_)
+            | isAlphaNum x = as
+            | otherwise    = escapeOp as
+
+        -- Escape an operator a la Haddock
+        escapeOp = concatMap (\c -> "-" ++ show (ord c) ++ "-")
+
+
+        allMatches :: Regex -> String -> [(String, [String])]
+        allMatches reg str = case matchRegexAll reg str of
+            Nothing                           -> []
+            Just (before, match, after, subs) -> (match, subs) : allMatches reg after
 
 type PackageName = String
-swap (x,y) = (y,x)
-whichPackage sources x = lookup x (fmap swap sources)
-
--- If the given identifier is an operator, wrap it in parentheses
--- Necessary to make the search work
-wrapOp :: Identifier -> Identifier
-wrapOp []     = []
-wrapOp as@(x:_)
-    | isAlphaNum x = as
-    | otherwise    = "(" ++ as ++ ")"
-
--- If the given identifier is an operator, escape it
-handleOp :: Identifier -> Identifier
-handleOp []     = []
-handleOp as@(x:_)
-    | isAlphaNum x = as
-    | otherwise    = escapeOp as
-
--- Escape an operator a la Haddock
-escapeOp = concatMap (\c -> "-" ++ show (ord c) ++ "-")
-
-
-allMatches :: Regex -> String -> [(String, [String])]
-allMatches reg str = case matchRegexAll reg str of
-    Nothing                           -> []
-    Just (before, match, after, subs) -> (match, subs) : allMatches reg after
-
 
 -----------------------------------------------------------------------------------------
 
--- whichModule, modNamesInCabals
+-- Only these used above:
+-- whichModule, packageAndModNamesInCabals
 
--- Given a set of modules, find the topmost module in which an identifier appears
--- A module is considered above another if it has fewer dots in its name. If the number of
--- dots are equal, use lexiographic order.
-whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
-whichModule modNames ident = eitherMaybe ("No such identifier: " ++ ident)
-    $ fmap (listToMaybe . sortBy bottomMost) modsWithIdent
-    where
-        mods = modsNamed modNames
-        -- modules containing the identifier
-        modsWithIdent = fmap (hasIdent ident) mods
-
-modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
-modsNamed = traverse modNamed
-
-modNamed :: ModuleName -> Either String (ModuleName, [Identifier])
-modNamed = modNamed'
-modNamed' n = case identifiers n of {
-    Left e    -> Left e ;
-    Right ids -> Right (n, ids) ;
-    }
-
-hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
-hasIdent ident = fmap fst . filter (\(n,ids) -> ident `elem` ids)
-
--- | Get all the identifiers of a module
-identifiers :: ModuleName -> Either String [Identifier]
-identifiers = unsafePerformIO . identifiers'
-
-identifiers' :: ModuleName -> IO (Either String [Identifier])
-identifiers' modName = fmap getElemNames $ Hint.runInterpreter $ Hint.getModuleExports modName
-    where
-        getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
-        getError = show
-
--- | Get all identifiers in a module element (names, class members, data constructors)
-getModuleElem :: ModuleElem -> [Identifier]
-getModuleElem (Fun a)      = [a]
-getModuleElem (Class a as) = a:as
-getModuleElem (Data a as)  = a:as
-
-{-
-modsInDir :: FilePath -> IO [ModuleName]
-modsInDir dir = do
-    dirList <- readProcess "find" [dir, "-type", "f", "-name", "*.hs"] ""
-    let dirs = lines dirList
-    let mods = fmap (pathToModName . dropBaseDir) dirs
-    return mods
-    where
-        dropBaseDir   = drop (length dir)
-        pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
-
--}
-packageAndModNamesInCabals :: [FilePath] -> IO [(PackageName, [ModuleName])]
-packageAndModNamesInCabals paths = flip mapM paths $ \path -> do
-    pn  <- packageNameInCabal path
-    mns <- modNamesInCabal path
-    return (pn, mns)
-
-
-packageNameInCabals :: [FilePath] -> IO [PackageName]
-packageNameInCabals = mapM packageNameInCabal
-
-packageNameInCabal :: FilePath -> IO PackageName
-packageNameInCabal path = do
-    packageDesc <- PDP.readPackageDescription normal path
-    return $ unPackageName $ P.pkgName $ PD.package $ PD.packageDescription packageDesc
+(whichModule, packageAndModNamesInCabals) = (whichModule', packageAndModNamesInCabals')
+  where
+    -- Given a set of modules, find the topmost module in which an identifier appears
+    -- A module is considered above another if it has fewer dots in its name. If the number of
+    -- dots are equal, use lexiographic order.
+    whichModule' :: [ModuleName] -> Identifier -> Either String ModuleName
+    whichModule' modNames ident = eitherMaybe ("No such identifier: " ++ ident)
+        $ fmap (listToMaybe . sortBy bottomMost) modsWithIdent
         where
-            unPackageName (P.PackageName x) = x
+            mods = modsNamed modNames
+            -- modules containing the identifier
+            modsWithIdent = fmap (hasIdent ident) mods
 
-modNamesInCabals :: [FilePath] -> IO [[ModuleName]]
-modNamesInCabals = mapM modNamesInCabal
+            modsNamed :: [ModuleName] -> Either String [(ModuleName, [Identifier])]
+            modsNamed = traverse modNamed
 
-modNamesInCabal :: FilePath -> IO [ModuleName]
-modNamesInCabal path = do
-    packageDesc <- PDP.readPackageDescription normal path
+            modNamed :: ModuleName -> Either String (ModuleName, [Identifier])
+            modNamed = modNamed'
+            modNamed' n = case identifiers n of {
+                Left e    -> Left e ;
+                Right ids -> Right (n, ids) ;
+                }
 
-    -- TODO Why doesn't this work?
-    -- case PD.library $ PD.packageDescription packageDesc of
-    --     Nothing -> return []
-    --     Just library -> return $ map unModName $ PD.exposedModules library
-    --     where
-    --         unModName = intercalate "." . components
+    hasIdent :: Identifier -> [(ModuleName, [Identifier])] -> [ModuleName]
+    hasIdent ident = fmap fst . filter (\(n,ids) -> ident `elem` ids)
+
+    -- | Get all the identifiers of a module
+    identifiers :: ModuleName -> Either String [Identifier]
+    identifiers = unsafePerformIO . identifiers'
+
+    identifiers' :: ModuleName -> IO (Either String [Identifier])
+    identifiers' modName = fmap getElemNames $ Hint.runInterpreter $ Hint.getModuleExports modName
+        where
+            getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
+            getError = show
+
+    -- | Get all identifiers in a module element (names, class members, data constructors)
+    getModuleElem :: ModuleElem -> [Identifier]
+    getModuleElem (Fun a)      = [a]
+    getModuleElem (Class a as) = a:as
+    getModuleElem (Data a as)  = a:as
+
+    {-
+    modsInDir :: FilePath -> IO [ModuleName]
+    modsInDir dir = do
+        dirList <- readProcess "find" [dir, "-type", "f", "-name", "*.hs"] ""
+        let dirs = lines dirList
+        let mods = fmap (pathToModName . dropBaseDir) dirs
+        return mods
+        where
+            dropBaseDir   = drop (length dir)
+            pathToModName = replace '/' '.' . dropWhile (not . isUpper) . dropLast 3
+
+    -}
+    packageAndModNamesInCabals' :: [FilePath] -> IO [(PackageName, [ModuleName])]
+    packageAndModNamesInCabals' paths = flip mapM paths $ \path -> do
+        pn  <- packageNameInCabal path
+        mns <- modNamesInCabal path
+        return (pn, mns)
+
+
+    packageNameInCabals :: [FilePath] -> IO [PackageName]
+    packageNameInCabals = mapM packageNameInCabal
+
+    packageNameInCabal :: FilePath -> IO PackageName
+    packageNameInCabal path = do
+        packageDesc <- PDP.readPackageDescription normal path
+        return $ unPackageName $ P.pkgName $ PD.package $ PD.packageDescription packageDesc
+            where
+                unPackageName (P.PackageName x) = x
+
+    modNamesInCabals :: [FilePath] -> IO [[ModuleName]]
+    modNamesInCabals = mapM modNamesInCabal
+
+    modNamesInCabal :: FilePath -> IO [ModuleName]
+    modNamesInCabal path = do
+        packageDesc <- PDP.readPackageDescription normal path
+
+        -- TODO Why doesn't this work?
+        -- case PD.library $ PD.packageDescription packageDesc of
+        --     Nothing -> return []
+        --     Just library -> return $ map unModName $ PD.exposedModules library
+        --     where
+        --         unModName = intercalate "." . components
         
-    case PD.condLibrary packageDesc of
-        Nothing      -> return []
-        Just library -> return $ exposedModules library
-        where
-            exposedModules = fmap unModName . PD.exposedModules . foldCondTree
-            unModName = intercalate "." . components
-            foldCondTree (PD.CondNode x c comp) = x -- Ignore subtrees   
+        case PD.condLibrary packageDesc of
+            Nothing      -> return []
+            Just library -> return $ exposedModules library
+            where
+                exposedModules = fmap unModName . PD.exposedModules . foldCondTree
+                unModName = intercalate "." . components
+                foldCondTree (PD.CondNode x c comp) = x -- Ignore subtrees   
 
-bottomMost :: ModuleName -> ModuleName -> Ordering
-bottomMost a b = case comparing level a b of
-    LT -> GT
-    EQ -> a `compare` b
-    GT -> LT
-    where
-        level = length . filter (== '.')
+    bottomMost :: ModuleName -> ModuleName -> Ordering
+    bottomMost a b = case comparing level a b of
+        LT -> GT
+        EQ -> a `compare` b
+        GT -> LT
+        where
+            level = length . filter (== '.')
 
 -----------------------------------------------------------------------------------------
 
