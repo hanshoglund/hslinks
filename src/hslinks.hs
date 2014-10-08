@@ -3,6 +3,7 @@
 
 module Main where
 
+import qualified Data.MemoTrie as MT
 import           Data.Char
 import           Data.List                             (intercalate, nub, sort,
                                                         sortBy)
@@ -38,6 +39,8 @@ runFilter inf outf args = hGetContents inf >>= run args >>= hPutStr outf
 
 ------------------------------------------------------------------------------------------
 
+-- TODO allow (and don't look up) qualified names
+
 -- |
 -- Given a list of cabal files, process input by replacing all text on the form
 -- @[foo] with [`foo`][foo], replacing @@@hslinks@@@ with an index on the form:
@@ -51,41 +54,41 @@ run :: [FilePath] -> String -> IO String
 run args input = do
     -- !packageNames <- packageNameInCabals args
     -- !modNames     <- modNamesInCabals args
-    !packAndMod <- packageAndModNamesInCabals args
+    !allPackagesAndModules <- packageAndModNamesInCabals args
 
-    let ids = nub $ fmap getId $ allMatches idExpr input
-    let !toLinks = idToLink (concatMap strength $ packAndMod)
-    let links = sort $ nub $ map toLinks ids
-    let index = "<!-- hslinks 0.6.1 index: -->\n" ++ intercalate "\n" links
+    let allIdentifiersInInput = nub $ fmap getId $ allMatches idExpr input
+    let index = intercalate "\n" $ sort $ nub $ map (generateIndex allPackagesAndModules) allIdentifiersInInput
 
-    return $ subElems $ subIndex index input
+    return $ substituteElements $ substituteIndex index input
+
     where
         idChars   = "[^]]+"
         idExpr    = mkRegex $ "@\\[(" ++ idChars ++ ")\\]"
         indexExpr = mkRegex $ "@@@hslinks@@@"
         getId     = head . snd
+        substituteElements a = subRegex idExpr    a "[`\\1`][\\1]"
+        substituteIndex i a  = subRegex indexExpr a i
 
-        subElems a   = subRegex idExpr    a "[`\\1`][\\1]"
-        subIndex i a = subRegex indexExpr a i
+generateIndex :: [(PackageName, [ModuleName])] -> Identifier -> String
+generateIndex allPackagesAndModules = generateIndexLink (concatMap strength $ allPackagesAndModules)
 
-        -- This must be a subfunction of run for some reason (probably due to unsafe stuff below) 
-        idToLink :: [(PackageName, ModuleName)] -> Identifier -> String
-        idToLink !sources ident =
-            let vOrT = if isUpper (head ident) then "t" else "v" in
-            case whichModule (fmap snd sources) (wrapOp ident) of
-                Left e -> "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
-                Right modName -> 
-                    -- TODO
-                    -- TODO This should be optional
-                    let package = fromJust $ whichPackage sources modName in
-                        ""
-                        ++ "[" ++ ident ++ "]: " ++ kPrefix 
-                        ++ package 
-                        ++ "/"
-                        ++ replace '.' '-' modName ++ ".html" 
-                        ++ "#" 
-                        ++ vOrT ++ ":" ++ handleOp ident ++ ""
-
+generateIndexLink :: [(PackageName, ModuleName)] -> Identifier -> String
+generateIndexLink !sources ident =
+    let vOrT = if isUpper (head ident) then "t" else "v" in
+    case whichModule (fmap snd sources) (wrapOp ident) of
+        Left e -> "[" ++ ident ++ "]: " ++ "\n<!-- Unknown: " ++ ident ++ " " ++ e ++ "-->\n"
+        Right modName -> 
+            -- TODO
+            -- TODO This should be optional
+            let package = fromJust $ whichPackage sources modName in
+                ""
+                ++ "[" ++ ident ++ "]: " ++ kPrefix 
+                ++ package 
+                ++ "/"
+                ++ replace '.' '-' modName ++ ".html" 
+                ++ "#" 
+                ++ vOrT ++ ":" ++ handleOp ident ++ ""   
+    where
         -- FIXME
         kPrefix = "/docs/api/"
         swap (x,y) = (y,x)
@@ -118,9 +121,10 @@ type PackageName = String
 
 -----------------------------------------------------------------------------------------
 
--- Only these used above:
--- whichModule, packageAndModNamesInCabals
-
+-- |
+-- Given a list of module names "in scope", find the first module containing the
+-- given identifier.
+--
 whichModule :: [ModuleName] -> Identifier -> Either String ModuleName
 whichModule = whichModule'
   where
@@ -150,10 +154,15 @@ whichModule = whichModule'
 
     -- | Get all the identifiers of a module
     identifiers :: ModuleName -> Either String [Identifier]
-    identifiers = unsafePerformIO . identifiers'
+    identifiers = memo $ unsafePerformIO . identifiers'
+
+    -- TODO identifiers' is being called repeatedly for the same argument
 
     identifiers' :: ModuleName -> IO (Either String [Identifier])
-    identifiers' modName = fmap getElemNames $ Hint.runInterpreter $ Hint.getModuleExports modName
+    identifiers' modName = do
+      hPutStrLn stderr $ "Looking up ids in " ++ modName
+      return $ Right []
+      fmap getElemNames $ Hint.runInterpreter $ Hint.getModuleExports modName
         where
             getElemNames = either (Left . getError) Right . fmap (concatMap getModuleElem)
             getError = show
@@ -186,6 +195,7 @@ packageAndModNamesInCabals = packageAndModNamesInCabals'
   where
     packageAndModNamesInCabals' :: [FilePath] -> IO [(PackageName, [ModuleName])]
     packageAndModNamesInCabals' paths = flip mapM paths $ \path -> do
+        hPutStrLn stderr "Looking up packages and modules..."
         pn  <- packageNameInCabal path
         mns <- modNamesInCabal path
         return (pn, mns)
